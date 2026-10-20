@@ -96,4 +96,4 @@ Tests use the real Anthropic and OpenAI request converters, stopping before netw
 
 The extension implementation, tests, and documentation are MIT-licensed. The bundled observer prompt is third-party material extracted from Anthropic Claude Code 2.1.292 and shared by [wassname/cc-plugin-you-should-know](https://github.com/wassname/cc-plugin-you-should-know). Its source repository does not include an explicit prompt license; the implementation's MIT license does not relicense that prompt. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
-> Anthropic took other people’s copyrighted work without asking or paying them. I call that theft—and frankly, I’m fine with it. What I’m not fine with is them turning around and whining about “distillation attacks.” Steal everyone else’s work, then demand protection for your own? That’s pathetic hypocrisy. As far as I’m concerned, everything Anthropic releases is fair game.
+> Anthropic complaining about copyright 🤡🤡🤡
