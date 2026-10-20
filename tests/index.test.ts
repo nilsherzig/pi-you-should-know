@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import type { AssistantMessage, Context, Message, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Context, Message, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { streamSimple } from "@earendil-works/pi-ai/compat";
 import { getBuiltinModels } from "@earendil-works/pi-ai/providers/all";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -110,44 +111,6 @@ test("real OpenAI conversion reuses the main request prefix, cache key, and reas
 	assert.equal(observer.max_output_tokens, main.max_output_tokens);
 });
 
-test("xAI sanitization keeps the observer input as an extension of the main request", async () => {
-	const grok = {
-		...getBuiltinModels("openai").find((candidate) => candidate.api === "openai-responses")!,
-		provider: "xai-oauth", id: "grok-4.7", reasoning: true,
-	} as Model<"openai-responses">;
-	const initial: Message[] = [{ role: "system", content: "Original main instructions", timestamp: 0 }, user("Do the task.")];
-	// The shape pi-grok's before_provider_request sanitizer produces: system text
-	// leaves the input array, and fields xAI rejects are gone.
-	const sanitize = (payload: Record<string, any>) => {
-		const input = [...payload.input];
-		const instructions = [payload.instructions, ...input.splice(0, input.findIndex((item) => item.role !== "system" && item.role !== "developer")).map((item) => item.content)].filter(Boolean).join("\n\n");
-		const { prompt_cache_retention: _retention, seed: _seed, ...rest } = payload;
-		return { ...rest, input, instructions, include: ["reasoning.encrypted_content"] };
-	};
-	async function capture(context: Context, main?: unknown) {
-		let captured: any;
-		const response = await streamSimple(grok, context, {
-			apiKey: "test-key-not-a-secret", sessionId: "main-session", reasoning: "high", maxTokens: 32000,
-			onPayload: (payload) => {
-				const sanitized = sanitize(payload as Record<string, any>);
-				if (main) inheritMainRequest(sanitized, main);
-				captured = structuredClone(sanitized);
-				throw new Error("Stop before network request");
-			},
-		}).result();
-		assert.ok(captured, response.errorMessage);
-		return captured;
-	}
-	const main = await capture({ messages: initial });
-	const observer = await capture(observerContext([...initial, user("Additional context")], history), main);
-	assert.deepEqual(observer.input.slice(0, main.input.length), main.input);
-	assert.equal(observer.instructions, main.instructions);
-	assert.match(observer.instructions, /Original main instructions/);
-	assert.deepEqual(observer.reasoning, main.reasoning);
-	assert.equal(observer.prompt_cache_key, main.prompt_cache_key);
-	assert.equal(observer.prompt_cache_retention, undefined);
-	assert.deepEqual(observer.include, ["reasoning.encrypted_content"]);
-});
 
 test("inherits OpenAI cache key, reasoning, and output budget without modifying input", () => {
 	const main = { input: [{ role: "user", content: "prefix" }], prompt_cache_key: "main-session", reasoning: { effort: "high" }, max_output_tokens: 32000, instructions: "Original system" };
@@ -170,13 +133,47 @@ test("does not check providers whose custom stream rewrites the captured request
 	assert.match(harness.ui.notifications.at(-1)!.message, /custom provider/);
 });
 
-test("checks the xAI OAuth provider even though it registers a custom stream", async () => {
+test("xAI OAuth checks reuse the sanitized main request as their cache prefix", async () => {
+	// Captured from pi-ai's OpenAI Responses converter and pi-grok 0.12.1's
+	// sanitizePayload for grok-4.7. The fixture is what xai-oauth actually sends:
+	// system text moved to instructions, rejected fields removed, reasoning kept.
+	const fixture = JSON.parse(readFileSync(new URL("./fixtures/xai-oauth-request.json", import.meta.url), "utf8")) as {
+		main: Record<string, unknown> & { input: unknown[] };
+		observer: Record<string, unknown> & { input: unknown[] };
+	};
+	const grok = { ...model, provider: "xai-oauth", id: "grok-4.7", api: "openai-responses" as const };
+	const transcript: Message[] = [
+		{ role: "system", content: "Original main instructions", timestamp: 0 },
+		user("Do the task."),
+	];
 	const { harness, calls, command } = await setup();
-	harness.context.model = { ...model, provider: "xai-oauth", id: "grok-4.7" };
+	let dispatched: unknown;
+	harness.context.model = grok;
 	harness.context.modelRegistry.getRegisteredProviderConfig = ((provider: string) =>
 		provider === "xai-oauth" ? { streamSimple: () => undefined } : undefined) as ExtensionContext["modelRegistry"]["getRegisteredProviderConfig"];
+	harness.context.modelRegistry.streamSimple = ((_model: unknown, context: Context, options: SimpleStreamOptions) => {
+		calls.push({ context, options });
+		return { result: async () => {
+			const request = structuredClone(fixture.observer);
+			options.onPayload?.(request, grok);
+			dispatched = request;
+			return reply();
+		} };
+	}) as ExtensionContext["modelRegistry"]["streamSimple"];
+	await harness.emit("context_with_system", { messages: transcript });
+	await harness.emit("before_provider_request", { payload: fixture.main });
 	await command("check");
+	await flush();
 	assert.equal(calls.length, 1);
+	const sent = dispatched as typeof fixture.observer;
+	assert.deepEqual(sent.input.slice(0, fixture.main.input.length), fixture.main.input);
+	assert.ok(sent.input.length > fixture.main.input.length);
+	const { input: _mainInput, ...mainSettings } = fixture.main;
+	const { input: _sentInput, ...sentSettings } = sent;
+	assert.deepEqual(sentSettings, mainSettings);
+	assert.equal(sent.prompt_cache_retention, undefined);
+	assert.equal(sent.reasoning && (sent.reasoning as { summary?: unknown }).summary, undefined);
+	assert.match(JSON.stringify(sent.input.at(-1)), /Previously suggested topics/);
 });
 
 test("checks every six steps without changing main context; reports real usage", async () => {
