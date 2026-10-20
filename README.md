@@ -75,6 +75,8 @@ Caching still depends on provider support, cache lifetime, and minimum prefix si
 
 There is no separate state directory. To inspect the estimated observer cost in one session file:
 
+> Can you notice that during the early development there used to be one? LLMs suck at updating docs ffs. 
+
 ```sh
 jq -s '[.[] | select(.type == "custom" and .customType == "you-should-know-usage") | .data.usage.cost.total // 0] | add // 0' SESSION.jsonl
 ```
