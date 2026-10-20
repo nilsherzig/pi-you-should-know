@@ -17,7 +17,7 @@ test("Pi loads exactly the packaged extension through its real extension loader"
 	t.after(() => rm(directory, { recursive: true, force: true }));
 	const loader = new DefaultResourceLoader({
 		cwd: directory, agentDir: directory, settingsManager: SettingsManager.inMemory(),
-		additionalExtensionPaths: manifest.pi.extensions.map((path: string) => resolve(root, path)),
+		additionalExtensionPaths: [root],
 		noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
 	});
 	await loader.reload();
