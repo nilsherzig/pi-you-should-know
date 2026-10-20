@@ -2,6 +2,8 @@
 
 A background observer for Pi, using the [observer prompt extracted from Claude Code 2.1.292](https://github.com/wassname/cc-plugin-you-should-know). It looks for one consequential detail the user may have missed and normally answers `learn: none`.
 
+<img width="1242" height="160" alt="image" src="https://github.com/user-attachments/assets/3eb8563b-a665-48a3-9510-d793d8e51847" />
+
 ## Installation
 
 Install directly from GitHub; no npm publication is required:
