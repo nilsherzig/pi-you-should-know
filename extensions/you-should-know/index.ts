@@ -122,15 +122,18 @@ export default function youShouldKnow(pi: ExtensionAPI) {
 	let mainPayload: unknown;
 	let lastResult: CheckResult | undefined;
 	const save = () => pi.appendEntry(KEY, structuredClone({ ...state, current: state.current?.demo ? undefined : state.current }));
-	// Custom providers can replace the payload in before_provider_request. The
-	// observer only sees the pre-replacement copy, so its prefix check fails.
-	const customStream = (ctx: ExtensionContext) =>
-		ctx.model !== undefined && typeof ctx.modelRegistry.getRegisteredProviderConfig?.(ctx.model.provider)?.streamSimple === "function";
+	// A custom stream can replace the payload after the observer captures it, so
+	// the captured copy is not the cache prefix. xai-oauth only adds request
+	// headers there; its body rewrite happens in before_provider_request, which
+	// the observer captures and reuses.
+	const opaqueStream = (ctx: ExtensionContext) =>
+		ctx.model !== undefined && ctx.model.provider !== "xai-oauth" &&
+		typeof ctx.modelRegistry.getRegisteredProviderConfig?.(ctx.model.provider)?.streamSimple === "function";
 	const unavailable = (ctx: ExtensionContext): string | undefined => {
 		if (!state.enabled) return "checks are disabled; use /ysk on";
 		if (state.current) return "a suggestion is already open; use /ysk more, /ysk know, or /ysk dismiss";
 		if (!ctx.model) return "no model is selected";
-		if (customStream(ctx)) return `checks are disabled for custom provider ${ctx.model.provider}; its request rewrite is not a reusable cache prefix`;
+		if (opaqueStream(ctx)) return `checks are disabled for custom provider ${ctx.model.provider}; its request rewrite is not a reusable cache prefix`;
 		if (!transcript.length || !mainPayload) return "no live main-chat request observed since session load/reload. Send a normal chat message first, then use /ysk check; the exact request settings are needed to preserve caching";
 	};
 	const summary = () => {
@@ -146,7 +149,7 @@ export default function youShouldKnow(pi: ExtensionAPI) {
 			ctx.ui.setStatus(KEY, `YSK · ${state.current.tag}: ${state.current.line} · /ysk more · /ysk know · /ysk dismiss`);
 			return;
 		}
-		ctx.ui.setStatus(KEY, debug ? `YSK: ${!state.enabled || customStream(ctx) ? "disabled" : pending || lastResult ? summary() : transcript.length && mainPayload ? "ready" : "waiting for main-chat request"}` : undefined);
+		ctx.ui.setStatus(KEY, debug ? `YSK: ${!state.enabled || opaqueStream(ctx) ? "disabled" : pending || lastResult ? summary() : transcript.length && mainPayload ? "ready" : "waiting for main-chat request"}` : undefined);
 	};
 	const recordResult = (ctx: ExtensionContext, result: CheckResult, manual: boolean) => {
 		lastResult = result;

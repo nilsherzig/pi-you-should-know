@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { AssistantMessage, Context, Message, SimpleStreamOptions } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Context, Message, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { streamSimple } from "@earendil-works/pi-ai/compat";
 import { getBuiltinModels } from "@earendil-works/pi-ai/providers/all";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -110,6 +110,45 @@ test("real OpenAI conversion reuses the main request prefix, cache key, and reas
 	assert.equal(observer.max_output_tokens, main.max_output_tokens);
 });
 
+test("xAI sanitization keeps the observer input as an extension of the main request", async () => {
+	const grok = {
+		...getBuiltinModels("openai").find((candidate) => candidate.api === "openai-responses")!,
+		provider: "xai-oauth", id: "grok-4.7", reasoning: true,
+	} as Model<"openai-responses">;
+	const initial: Message[] = [{ role: "system", content: "Original main instructions", timestamp: 0 }, user("Do the task.")];
+	// The shape pi-grok's before_provider_request sanitizer produces: system text
+	// leaves the input array, and fields xAI rejects are gone.
+	const sanitize = (payload: Record<string, any>) => {
+		const input = [...payload.input];
+		const instructions = [payload.instructions, ...input.splice(0, input.findIndex((item) => item.role !== "system" && item.role !== "developer")).map((item) => item.content)].filter(Boolean).join("\n\n");
+		const { prompt_cache_retention: _retention, seed: _seed, ...rest } = payload;
+		return { ...rest, input, instructions, include: ["reasoning.encrypted_content"] };
+	};
+	async function capture(context: Context, main?: unknown) {
+		let captured: any;
+		const response = await streamSimple(grok, context, {
+			apiKey: "test-key-not-a-secret", sessionId: "main-session", reasoning: "high", maxTokens: 32000,
+			onPayload: (payload) => {
+				const sanitized = sanitize(payload as Record<string, any>);
+				if (main) inheritMainRequest(sanitized, main);
+				captured = structuredClone(sanitized);
+				throw new Error("Stop before network request");
+			},
+		}).result();
+		assert.ok(captured, response.errorMessage);
+		return captured;
+	}
+	const main = await capture({ messages: initial });
+	const observer = await capture(observerContext([...initial, user("Additional context")], history), main);
+	assert.deepEqual(observer.input.slice(0, main.input.length), main.input);
+	assert.equal(observer.instructions, main.instructions);
+	assert.match(observer.instructions, /Original main instructions/);
+	assert.deepEqual(observer.reasoning, main.reasoning);
+	assert.equal(observer.prompt_cache_key, main.prompt_cache_key);
+	assert.equal(observer.prompt_cache_retention, undefined);
+	assert.deepEqual(observer.include, ["reasoning.encrypted_content"]);
+});
+
 test("inherits OpenAI cache key, reasoning, and output budget without modifying input", () => {
 	const main = { input: [{ role: "user", content: "prefix" }], prompt_cache_key: "main-session", reasoning: { effort: "high" }, max_output_tokens: 32000, instructions: "Original system" };
 	const request = { input: [...main.input, { role: "user", content: "observer" }], prompt_cache_key: "wrong", reasoning: { effort: "low" }, max_output_tokens: 1024, temperature: 0 };
@@ -129,6 +168,15 @@ test("does not check providers whose custom stream rewrites the captured request
 	await command("check");
 	assert.equal(calls.length, 0);
 	assert.match(harness.ui.notifications.at(-1)!.message, /custom provider/);
+});
+
+test("checks the xAI OAuth provider even though it registers a custom stream", async () => {
+	const { harness, calls, command } = await setup();
+	harness.context.model = { ...model, provider: "xai-oauth", id: "grok-4.7" };
+	harness.context.modelRegistry.getRegisteredProviderConfig = ((provider: string) =>
+		provider === "xai-oauth" ? { streamSimple: () => undefined } : undefined) as ExtensionContext["modelRegistry"]["getRegisteredProviderConfig"];
+	await command("check");
+	assert.equal(calls.length, 1);
 });
 
 test("checks every six steps without changing main context; reports real usage", async () => {
