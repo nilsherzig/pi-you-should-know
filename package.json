@@ -1,0 +1,35 @@
+{
+  "name": "pi-you-should-know",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A cache-aware background observer that flags consequential details you may have missed in a Pi session.",
+  "keywords": ["pi-package", "pi-extension", "observer", "prompt-caching"],
+  "license": "SEE LICENSE IN LICENSE",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nilsherzig/pi-you-should-know.git"
+  },
+  "homepage": "https://github.com/nilsherzig/pi-you-should-know#readme",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "pi": {
+    "extensions": ["./extensions/you-should-know/index.ts"]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "1.3.0",
+    "@earendil-works/pi-coding-agent": "1.3.0",
+    "@types/node": "24.12.4",
+    "tsx": "4.22.5",
+    "typescript": "5.9.3"
+  },
+  "scripts": {
+    "test": "npm run typecheck && tsx --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  }
+}

@@ -1,0 +1,16 @@
+Third-party observer prompt
+
+extensions/you-should-know/observer-prompt.md is reproduced from:
+https://github.com/wassname/cc-plugin-you-should-know/blob/b77fc29394a3bafe6041ae403de63cb3b5d92265/claude-code-2.1.292/observer-prompt.md
+
+That repository identifies the prompt as extracted from Anthropic Claude Code
+2.1.292. The extraction header was removed from the prompt sent to the model;
+this notice preserves its provenance outside model context.
+
+The upstream implementation carries this attribution:
+(c) Anthropic PBC. All rights reserved.
+https://code.claude.com/docs/en/legal-and-compliance
+
+The source repository does not include an explicit license for the extracted
+prompt. This repository's MIT license does not grant rights to or relicense
+that third-party material.
