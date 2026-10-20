@@ -21,12 +21,12 @@ const textOf = (message: Message) => {
 };
 const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
 
-async function setup(result: () => Promise<AssistantMessage> = async () => reply(), entries: unknown[] = []) {
+async function setup(result: () => Promise<AssistantMessage> = async () => reply(), entries: unknown[] = [], registryOverrides: Record<string, unknown> = {}) {
 	const calls: { context: Context; options: SimpleStreamOptions }[] = [];
 	const registry = { streamSimple: (_model: unknown, context: Context, options: SimpleStreamOptions) => {
 		calls.push({ context, options });
 		return { result };
-	} };
+	}, ...registryOverrides };
 	const harness = await loadExtensionForTest(extension, { context: {
 		model, modelRegistry: registry as unknown as ExtensionContext["modelRegistry"],
 		sessionManager: { getSessionId: () => "test-session", getBranch: () => entries } as unknown as ExtensionContext["sessionManager"],
@@ -119,6 +119,16 @@ test("inherits OpenAI cache key, reasoning, and output budget without modifying 
 
 test("blocks changed main transcript prefixes before the provider request is sent", () => {
 	assert.throws(() => inheritMainRequest({ messages: [{ role: "user", content: "rewritten" }] }, { messages: [{ role: "user", content: "original" }] }), /blocked/);
+});
+
+test("does not check providers whose custom stream rewrites the captured request", async () => {
+	const { harness, calls, turn, command } = await setup(async () => reply(note), [], {
+		getRegisteredProviderConfig: () => ({ streamSimple: () => undefined }),
+	});
+	for (let i = 0; i < 6; i++) await turn();
+	await command("check");
+	assert.equal(calls.length, 0);
+	assert.match(harness.ui.notifications.at(-1)!.message, /custom provider/);
 });
 
 test("checks every six steps without changing main context; reports real usage", async () => {
